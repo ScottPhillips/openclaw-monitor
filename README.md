@@ -16,7 +16,7 @@
 
 ## ⬇️ Download
 
-**[Download OpenClawMonitor-1.0.0.dmg](https://github.com/ScottPhillips/openclaw-monitor/releases/latest/download/OpenClawMonitor-1.0.0.dmg)**
+**[⬇ Download OpenClawMonitor-1.0.0.dmg](https://github.com/ScottPhillips/openclaw-monitor/releases/download/v1.0.0/OpenClawMonitor-1.0.0.dmg)**
 
 > **First launch:** right-click the app → **Open** (or go to System Settings → Privacy & Security → Open Anyway).
 > This is required because the app is not yet notarized with an Apple Developer account.
