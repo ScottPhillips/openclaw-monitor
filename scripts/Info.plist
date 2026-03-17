@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Identity -->
+    <key>CFBundleExecutable</key>
+    <string>OpenClawMonitor</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.openclaw.monitor</string>
+    <key>CFBundleName</key>
+    <string>OpenClaw Monitor</string>
+    <key>CFBundleDisplayName</key>
+    <string>OpenClaw Monitor</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <!-- Version — overridden by Makefile via PlistBuddy -->
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+
+    <!-- Menu bar app: hide from Dock and Force-Quit list -->
+    <key>LSUIElement</key>
+    <true/>
+
+    <!-- Retina / high-res display -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <!-- Minimum OS -->
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+
+    <!-- Notifications usage description (macOS 10.14+) -->
+    <key>NSUserNotificationAlertStyle</key>
+    <string>alert</string>
+</dict>
+</plist>

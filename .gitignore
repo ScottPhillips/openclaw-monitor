@@ -1,0 +1,26 @@
+# Swift build artefacts
+.build/
+*.o
+*.d
+*.swp
+
+# Xcode
+*.xcodeproj/
+xcuserdata/
+*.xcworkspace/
+DerivedData/
+
+# Packaging output (reproducible via `make dmg`)
+dist/
+
+# Generated iconset staging directory
+scripts/AppIcon.iconset/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon\r
+._*
+.Spotlight-V100
+.Trashes

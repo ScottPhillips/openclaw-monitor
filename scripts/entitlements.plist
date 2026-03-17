@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Hardened Runtime entitlements — required for notarization.
+
+        This app is NOT sandboxed (it runs shell commands via /bin/sh).
+        Without the sandbox, we just need the hardened runtime flag below
+        so Gatekeeper trusts the binary after notarization.
+    -->
+
+    <!--
+        Allow the app to call into dynamic libraries that aren't co-signed.
+        Swift runtime libraries need this on some configurations.
+    -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <false/>
+
+    <!--
+        Needed if you link against non-Apple frameworks at runtime.
+        Leave false unless you get "library load disallowed" errors.
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <false/>
+</dict>
+</plist>
