@@ -1,43 +1,27 @@
-<div align="center">
-  <img src="scripts/AppIcon.icns" width="96" alt="OpenClaw Monitor icon">
+# OpenClaw Monitor
 
-  # OpenClaw Monitor
+A native macOS menu bar app that keeps an eye on your OpenClaw gateway — checking its health on a configurable schedule and automatically attempting a restart if something goes wrong.
 
-  **A native macOS menu bar app that keeps an eye on your OpenClaw gateway.**
+## Download
 
-  [![Release](https://img.shields.io/github/v/release/ScottPhillips/openclaw-monitor?style=flat-square)](https://github.com/ScottPhillips/openclaw-monitor/releases/latest)
-  [![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue?style=flat-square)](https://github.com/ScottPhillips/openclaw-monitor/releases/latest)
-  [![Swift](https://img.shields.io/badge/Swift-5.9-orange?style=flat-square)](https://swift.org)
-  [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+**[⬇ Download OpenClaw Monitor v1.0.0](https://github.com/ScottPhillips/openclaw-monitor/releases/download/v1.0.0/OpenClawMonitor-1.0.0.dmg)**
 
-</div>
-
----
-
-## ⬇️ Download
-
-**[⬇ Download OpenClawMonitor-1.0.0.dmg](https://github.com/ScottPhillips/openclaw-monitor/releases/download/v1.0.0/OpenClawMonitor-1.0.0.dmg)**
-
-> **First launch:** right-click the app → **Open** (or go to System Settings → Privacy & Security → Open Anyway).
-> This is required because the app is not yet notarized with an Apple Developer account.
+> **First launch:** right-click the app → **Open** (the app is not yet notarized, so macOS will warn you the first time).
 
 ---
 
 ## What it does
 
-OpenClaw Monitor sits quietly in your menu bar and periodically runs OpenClaw diagnostics.
-It surfaces problems immediately and attempts automatic recovery — so you find out about a broken gateway before your users do.
-
-### Status at a glance
+OpenClaw Monitor sits in your menu bar and periodically runs OpenClaw diagnostic commands. The icon changes to reflect current health:
 
 | Icon | Meaning |
 |------|---------|
-| 🟢 OClaw | All checks passed |
+| 🟢 OClaw | Everything is healthy |
 | 🔴 OClaw | One or more checks failed |
-| ⟳ OClaw | Check or repair in progress |
+| ⟳ OClaw | Check in progress |
 | ⚪ OClaw | Not yet checked |
 
-### Three check levels
+### Check levels
 
 | Level | Commands run |
 |-------|-------------|
@@ -45,92 +29,85 @@ It surfaces problems immediately and attempts automatic recovery — so you find
 | **Medium** | + `openclaw gateway status` · `openclaw health --json` |
 | **Deep** | + `openclaw status --deep` · `openclaw security audit --deep` |
 
-The periodic auto-check always uses **Basic**.
-Trigger **Medium** or **Deep** manually from the menu when you want more confidence.
+The periodic auto-check always uses **Basic**. Medium and Deep can be triggered manually from the menu at any time.
 
 ### Auto-repair
 
-When a check fails OpenClaw Monitor tries to fix things without bothering you:
+When a check fails, OpenClaw Monitor tries to fix things automatically:
 
-1. Runs `openclaw gateway restart` automatically
-2. Waits 10 s, then re-checks
-3. If still failing → macOS notification + **⚠️ Reinstall Gateway…** is highlighted in the menu
-4. Confirm the reinstall and `openclaw gateway reinstall` runs
+1. Runs `openclaw gateway restart` in the background
+2. Waits 10 seconds, then re-checks
+3. If still failing → sends a second notification and highlights **⚠️ Reinstall Gateway…** in the menu
+4. You can confirm the reinstall from the menu, which runs `openclaw gateway reinstall`
 
----
-
-## Installation
-
-1. [Download the DMG](https://github.com/ScottPhillips/openclaw-monitor/releases/latest/download/OpenClawMonitor-1.0.0.dmg)
-2. Open the DMG and drag **OpenClaw Monitor** into **Applications**
-3. Launch it — it appears in your menu bar with no Dock icon
-
-To have it start automatically at login:
-**System Settings → General → Login Items → +** → select *OpenClaw Monitor*
-
----
-
-## Menu reference
+### Menu layout
 
 ```
 🟢 OClaw
-─────────────────────────────
+────────────────────────────────
 Status:  OK ✓
 Last check:  14:23:05  [basic]
-─────────────────────────────
-Check Now                     ← Basic check on demand
+────────────────────────────────
+Check Now
 Medium Check
 Deep Check
-Show Last Output…             ← Scrollable output from the last run
-─────────────────────────────
-Restart Gateway…              ← Manual gateway restart (with confirm dialog)
-Reinstall Gateway…            ← Manual reinstall (with confirm dialog)
-─────────────────────────────
-Set Interval…                 ← Change auto-check cadence (default: 30 min)
+Show Last Output…
+────────────────────────────────
+Restart Gateway…
+Reinstall Gateway…
+────────────────────────────────
+Set Interval…
   Auto-check every 30 min
-─────────────────────────────
+────────────────────────────────
 Quit
 ```
 
 ---
 
-## Building from source
+## Install
 
-**Requirements:** macOS 13+, Xcode Command Line Tools (`xcode-select --install`)
+1. Download the DMG from the link above
+2. Open the DMG, drag **OpenClaw Monitor** into your **Applications** folder
+3. Right-click → **Open** on first launch (bypasses unsigned-app warning)
+
+To start automatically at login: **System Settings → General → Login Items → +** → select OpenClaw Monitor.
+
+---
+
+## Build from source
+
+**Requirements:** macOS 13+, Swift 5.9+ (Xcode Command Line Tools — no full Xcode needed)
 
 ```bash
 git clone https://github.com/ScottPhillips/openclaw-monitor.git
 cd openclaw-monitor
-
-# Run locally (debug build)
-swift run
-
-# Build a distributable DMG
-pip3 install Pillow          # only needed once, for icon generation
-python3 scripts/make_icon.py
-make dmg                     # output → dist/OpenClawMonitor-1.0.0.dmg
+swift run          # build + launch immediately
 ```
 
 ### Makefile targets
 
-| Target | Description |
-|--------|-------------|
-| `make` | Debug build (fast, for development) |
-| `make bundle` | Release binary → `.app` bundle in `dist/` |
-| `make dmg` | Bundle → distributable `.dmg` in `dist/` |
+| Command | What it does |
+|---------|-------------|
+| `make` / `make build` | Debug build |
+| `make release` | Release binary only |
+| `make bundle` | Release binary → `.app` in `dist/` |
+| `make dmg` | `.app` → `.dmg` in `dist/` |
+| `make sign IDENTITY="…"` | Code-sign the bundle |
+| `make notarize IDENTITY="…" APPLE_ID="…" TEAM_ID="…"` | Notarize with Apple |
 | `make clean` | Remove `dist/` and `.build/` |
 
-### Code signing & notarization *(optional)*
-
-Notarized apps open without a security warning on any Mac.
+### Regenerate the app icon
 
 ```bash
-# Sign
-IDENTITY="Developer ID Application: Your Name (TEAMID)" make sign
-
-# Notarize (store credentials once with xcrun notarytool store-credentials first)
-IDENTITY="..." APPLE_ID="you@example.com" TEAM_ID="XXXXXXXX" make notarize
+pip3 install Pillow
+python3 scripts/make_icon.py
 ```
+
+---
+
+## Configuration
+
+The check interval is stored in `UserDefaults` (key `intervalMinutes`, default `30`). Change it via **Set Interval…** in the menu — persists across restarts.
 
 ---
 
@@ -138,19 +115,19 @@ IDENTITY="..." APPLE_ID="you@example.com" TEAM_ID="XXXXXXXX" make notarize
 
 ```
 openclaw-monitor/
-├── Package.swift                    Swift Package manifest (macOS 13+)
-├── Makefile                         Build, bundle, DMG, sign, notarize
+├── Package.swift
+├── Makefile
 ├── Sources/OpenClawMonitor/
-│   ├── main.swift                   NSApplication setup (accessory policy = no Dock icon)
-│   ├── AppDelegate.swift            App lifecycle
-│   ├── CommandRunner.swift          Async Process wrapper with enriched PATH
-│   ├── Monitor.swift                Check logic, auto-repair, interval timer
-│   └── StatusBarController.swift   NSStatusItem, NSMenu, dialogs
+│   ├── main.swift                # NSApp setup, no-Dock-icon policy
+│   ├── AppDelegate.swift         # App lifecycle
+│   ├── CommandRunner.swift       # Async Process wrapper (enriched PATH)
+│   ├── Monitor.swift             # Health checks, auto-repair, timer
+│   └── StatusBarController.swift # Menu bar UI
 └── scripts/
-    ├── make_icon.py                 Generates AppIcon.icns via Pillow
-    ├── AppIcon.icns                 App icon (all sizes)
-    ├── Info.plist                   Bundle metadata template
-    └── entitlements.plist           Hardened runtime entitlements
+    ├── make_icon.py              # Icon generator (requires Pillow)
+    ├── AppIcon.icns              # Compiled icon (all sizes 16–1024 px)
+    ├── Info.plist                # Bundle metadata
+    └── entitlements.plist        # Hardened-runtime entitlements
 ```
 
 ---
