@@ -9,8 +9,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         self.monitor = monitor
         statusBarController = StatusBarController(monitor: monitor)
 
-        // Run initial check without blocking the UI
+        // Fetch the control-panel URL and run initial check without blocking the UI
         Task {
+            await monitor.fetchControlPanelURL()
             await monitor.runCheck(level: .basic)
         }
 

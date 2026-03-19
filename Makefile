@@ -17,7 +17,7 @@
 APP_NAME     := OpenClaw Monitor
 BINARY_NAME  := OpenClawMonitor
 BUNDLE_ID    := com.openclaw.monitor
-VERSION      := 1.0.0
+VERSION      := 1.1.0
 BUILD_NUMBER := 1
 
 # Paths
