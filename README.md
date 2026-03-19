@@ -4,7 +4,7 @@ A native macOS menu bar app that keeps an eye on your OpenClaw gateway — check
 
 ## Download
 
-**[⬇ Download OpenClaw Monitor v1.0.0](https://github.com/ScottPhillips/openclaw-monitor/releases/download/v1.0.0/OpenClawMonitor-1.0.0.dmg)**
+**[⬇ Download OpenClaw Monitor v1.1.0](https://github.com/ScottPhillips/openclaw-monitor/releases/download/v1.1.0/OpenClawMonitor-1.1.0.dmg)**
 
 > **First launch:** right-click the app → **Open** (the app is not yet notarized, so macOS will warn you the first time).
 
