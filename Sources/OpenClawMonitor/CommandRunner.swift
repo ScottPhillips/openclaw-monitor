@@ -1,14 +1,31 @@
 import Foundation
 
 enum CommandRunner {
-    /// PATH prepended to every subprocess environment so that tools installed
-    /// via Homebrew or /usr/local are found even when launched from a menu bar app.
+    /// Full PATH sourced from the user's login shell once at startup.
+    /// This ensures tools installed via npm global, Homebrew, nvm, etc. are found
+    /// even though menu bar apps inherit a minimal macOS session PATH.
     static let enrichedEnvironment: [String: String] = {
         var env = ProcessInfo.processInfo.environment
-        let extra = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-        env["PATH"] = extra + ":" + (env["PATH"] ?? "")
+        env["PATH"] = loginShellPath()
         return env
     }()
+
+    private static func loginShellPath() -> String {
+        let p = Process()
+        let pipe = Pipe()
+        p.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        p.arguments = ["-l", "-c", "echo $PATH"]
+        p.standardOutput = pipe
+        p.standardError = Pipe()
+        guard (try? p.run()) != nil else {
+            return "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+        }
+        p.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let path = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return path.isEmpty ? "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" : path
+    }
 
     /// Runs *command* in `/bin/sh -c` on a background thread.
     /// stdout and stderr are merged into a single string.

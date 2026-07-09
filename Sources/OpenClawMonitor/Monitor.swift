@@ -2,17 +2,14 @@ import Foundation
 
 // MARK: - CheckCommand
 
-/// A shell command with optional output-pattern overrides.
-/// Some `openclaw` commands always exit 0 even on failure and embed
-/// failure text in stdout/stderr — `failurePatterns` catches those.
 struct CheckCommand {
     let shell:           String
     let label:           String
-    let failurePatterns: [String]   // case-insensitive; any match → failure
+    let failurePatterns: [String]
 
     init(_ shell: String, label: String = "", failurePatterns: [String] = []) {
-        self.shell  = shell
-        self.label  = label.isEmpty ? shell : label
+        self.shell           = shell
+        self.label           = label.isEmpty ? shell : label
         self.failurePatterns = failurePatterns
     }
 }
@@ -23,30 +20,19 @@ enum CheckLevel: String {
     case basic = "basic"
     case deep  = "deep"
 
-    /// The reliable commands for a standard check.
-    /// Only `openclaw gateway probe` and `openclaw health --json` exit non-zero
-    /// on failure; the others need pattern matching.
     static let baseCommands: [CheckCommand] = [
-        CheckCommand(
-            "openclaw gateway probe",
-            label: "RPC probe"
-            // exits 1 on failure — no pattern needed
-        ),
-        CheckCommand(
-            "openclaw health --json",
-            label: "Health"
-            // exits 1 on failure — no pattern needed
-        ),
+        CheckCommand("openclaw gateway probe", label: "RPC probe"),
+        CheckCommand("openclaw health --json",  label: "Health"),
         CheckCommand(
             "curl -sf --connect-timeout 5 --max-time 10 http://127.0.0.1:18789/",
             label: "Dashboard"
-            // curl -f exits non-zero on connection failure or HTTP error
         ),
         CheckCommand(
             "openclaw channels status --probe",
             label: "Channels",
-            failurePatterns: ["Gateway not reachable", "Error:"]
-            // exits 0 even when gateway is down
+            failurePatterns: ["Gateway not reachable"]
+            // "Error:" intentionally excluded — per-channel error fields (e.g.
+            // "error:channel stop timed out") are stale state, not gateway failures.
         ),
     ]
 
@@ -64,7 +50,7 @@ enum CheckLevel: String {
                 CheckCommand(
                     "openclaw security audit --deep",
                     label: "Security audit",
-                    failurePatterns: ["critical"]
+                    failurePatterns: ["CRITICAL"]  // uppercase-only avoids false positives
                 ),
             ]
         }
@@ -99,16 +85,16 @@ struct CheckResult {
 // MARK: - Channel health
 
 struct ChannelAccount {
-    let id:      String   // e.g. "default", "jarvis"
-    let label:   String   // e.g. "@IamAbbyIrons_bot (jarvis)"
+    let id:      String
+    let label:   String
     let healthy: Bool
 }
 
 struct ChannelHealth {
-    let id:       String          // e.g. "telegram"
-    let label:    String          // e.g. "Telegram"
+    let id:       String
+    let label:    String
     let healthy:  Bool
-    let accounts: [ChannelAccount] // populated when channel has >1 account
+    let accounts: [ChannelAccount]
 }
 
 // MARK: - HistoryEvent
@@ -144,17 +130,34 @@ final class Monitor {
 
     // MARK: Published state
 
-    private(set) var checkStatus:        CheckStatus    = .unknown
+    private(set) var checkStatus:        CheckStatus     = .unknown
     private(set) var lastCheck:          Date?
-    private(set) var lastResults:        [CheckResult]  = []
-    private(set) var lastLevel:          CheckLevel     = .basic
-    private(set) var reinstallSuggested: Bool           = false
-    private(set) var openclawMissing:    Bool           = false
-    private(set) var history:            [HistoryEvent] = []
+    private(set) var lastResults:        [CheckResult]   = []
+    private(set) var lastLevel:          CheckLevel      = .basic
+    private(set) var reinstallSuggested: Bool            = false
+    private(set) var openclawMissing:    Bool            = false
+    private(set) var history:            [HistoryEvent]  = []
     private(set) var channels:           [ChannelHealth] = []
-    private(set) var controlPanelURL:    String         = "http://127.0.0.1:18789/"
+    private(set) var controlPanelURL:    String          = "http://127.0.0.1:18789/"
+    private(set) var openclawVersion:    String          = ""
+    private(set) var healthySince:       Date?
+    private(set) var updateAvailable:    String?
 
-    /// Called whenever any state changes — drives UI refresh.
+    /// Non-nil while alerts are muted.
+    var snoozeUntil: Date?
+
+    var isSnoozed: Bool {
+        guard let until = snoozeUntil else { return false }
+        return Date() < until
+    }
+
+    /// Comma-separated names of currently failing checks, or empty string.
+    var failedChecks: String {
+        guard checkStatus == .failed else { return "" }
+        let names = lastResults.filter { !$0.ok }.map { $0.command }
+        return names.isEmpty ? "" : names.joined(separator: ", ")
+    }
+
     var onStatusChanged: (() -> Void)?
 
     // MARK: Interval (UserDefaults)
@@ -169,8 +172,9 @@ final class Monitor {
 
     // MARK: Private
 
-    private var timer:      Timer?
-    private var isBusy =    false
+    private var timer:          Timer?
+    private var isBusy =        false
+    private var lastFailureKey: String?   // for notification deduplication
 
     private let historyFileURL: URL = {
         URL(fileURLWithPath: NSHomeDirectory())
@@ -192,8 +196,20 @@ final class Monitor {
         }
     }
 
-    func stopTimer()  { timer?.invalidate(); timer = nil }
+    func stopTimer()    { timer?.invalidate(); timer = nil }
     func restartTimer() { startPeriodicTimer() }
+
+    // MARK: - Snooze
+
+    func snooze(hours: Double = 1) {
+        snoozeUntil = Date().addingTimeInterval(hours * 3600)
+        onStatusChanged?()
+    }
+
+    func unsnooze() {
+        snoozeUntil = nil
+        onStatusChanged?()
+    }
 
     // MARK: - Public: run a check
 
@@ -210,9 +226,16 @@ final class Monitor {
         applyResults(ok: allOk, results: results, level: level)
 
         if !allOk && !missing {
-            appendHistory(HistoryEvent(date: Date(), kind: .checkFailed,
-                summary: failureSummary(from: results)))
-            await autoRepair()
+            let key = failureSummary(from: results)
+            if key != lastFailureKey {
+                // New or changed failure — record history and attempt repair.
+                appendHistory(HistoryEvent(date: Date(), kind: .checkFailed, summary: key))
+                lastFailureKey = key
+                await autoRepair()
+            }
+            // Same failure key as last check: skip notification and history spam.
+        } else if allOk {
+            lastFailureKey = nil
         }
 
         isBusy = false
@@ -223,7 +246,6 @@ final class Monitor {
     func restartGateway() async {
         guard !isBusy else { return }
         isBusy = true
-
         checkStatus = .checking
         onStatusChanged?()
 
@@ -239,42 +261,29 @@ final class Monitor {
             (code, output) = (0, restartOut)
         }
         let snippet = output.isEmpty ? "Done" : String(output.prefix(160))
-
-        if code == 0 {
-            notify(title: "Gateway started ✓", body: snippet)
-        } else {
-            notify(title: "Gateway start failed ✗", body: snippet)
-        }
+        notify(title: code == 0 ? "Gateway started ✓" : "Gateway start failed ✗", body: snippet)
 
         let (allOk, results, _) = await executeCommands(for: .basic)
         applyResults(ok: allOk, results: results, level: .basic)
-
         if allOk {
-            appendHistory(HistoryEvent(date: Date(), kind: .recovered, summary: "Healthy after manual restart"))
+            appendHistory(HistoryEvent(date: Date(), kind: .recovered,
+                                       summary: "Healthy after manual restart"))
         }
-
         isBusy = false
     }
 
     func stopGateway() async {
         guard !isBusy else { return }
         isBusy = true
-
         checkStatus = .checking
         onStatusChanged?()
 
         let (code, output) = await CommandRunner.run("openclaw gateway stop", timeout: 60)
         let snippet = output.isEmpty ? "Done" : String(output.prefix(160))
-
-        if code == 0 {
-            notify(title: "Gateway stopped", body: snippet)
-        } else {
-            notify(title: "Gateway stop failed ✗", body: snippet)
-        }
+        notify(title: code == 0 ? "Gateway stopped" : "Gateway stop failed ✗", body: snippet)
 
         let (allOk, results, _) = await executeCommands(for: .basic)
         applyResults(ok: allOk, results: results, level: .basic)
-
         isBusy = false
     }
 
@@ -282,7 +291,6 @@ final class Monitor {
         guard !isBusy else { return }
         isBusy = true
         reinstallSuggested = false
-
         checkStatus = .checking
         onStatusChanged?()
 
@@ -291,20 +299,14 @@ final class Monitor {
 
         let (code, output) = await CommandRunner.run("openclaw gateway reinstall", timeout: 300)
         let snippet = output.isEmpty ? "Done" : String(output.prefix(160))
-
-        if code == 0 {
-            notify(title: "Gateway reinstalled ✓", body: snippet)
-        } else {
-            notify(title: "Gateway reinstall failed ✗", body: snippet)
-        }
+        notify(title: code == 0 ? "Gateway reinstalled ✓" : "Gateway reinstall failed ✗", body: snippet)
 
         let (allOk, results, _) = await executeCommands(for: .basic)
         applyResults(ok: allOk, results: results, level: .basic)
-
         if allOk {
-            appendHistory(HistoryEvent(date: Date(), kind: .recovered, summary: "Healthy after reinstall"))
+            appendHistory(HistoryEvent(date: Date(), kind: .recovered,
+                                       summary: "Healthy after reinstall"))
         }
-
         isBusy = false
     }
 
@@ -313,7 +315,6 @@ final class Monitor {
     private func autoRepair() async {
         appendHistory(HistoryEvent(date: Date(), kind: .restartAttempt, summary: "Auto-repair triggered"))
 
-        // Try restart first; if the service isn't loaded, fall through to install.
         let (_, restartOutput) = await CommandRunner.run("openclaw gateway restart", timeout: 120)
         let serviceNotLoaded = restartOutput.lowercased().contains("not loaded")
                            || restartOutput.lowercased().contains("not installed")
@@ -322,7 +323,8 @@ final class Monitor {
             notify(title: "OpenClaw check failed", body: "Gateway not running — installing and starting…")
             let (installCode, installOutput) = await CommandRunner.run("openclaw gateway install", timeout: 60)
             if installCode != 0 {
-                notify(title: "Gateway install failed ✗", body: installOutput.isEmpty ? "(no output)" : String(installOutput.prefix(160)))
+                let body = installOutput.isEmpty ? "(no output)" : String(installOutput.prefix(160))
+                notify(title: "Gateway install failed ✗", body: body)
                 reinstallSuggested = true
                 onStatusChanged?()
                 return
@@ -331,7 +333,6 @@ final class Monitor {
             notify(title: "OpenClaw check failed", body: "Attempting gateway restart…")
         }
 
-        // Give the gateway time to come back up
         try? await Task.sleep(for: .seconds(10))
 
         let (allOk, results, _) = await executeCommands(for: .basic)
@@ -342,8 +343,9 @@ final class Monitor {
                 summary: "All checks passed after restart"))
             notify(title: "OpenClaw ✓", body: "Gateway restart fixed the issue.")
         } else {
+            let key = failureSummary(from: results)
             appendHistory(HistoryEvent(date: Date(), kind: .checkFailed,
-                summary: "Still failing after restart — " + failureSummary(from: results)))
+                summary: "Still failing after restart — " + key))
             notify(title: "OpenClaw still failing",
                    body: "Restart didn't help — try reinstalling from the menu.")
             reinstallSuggested = true
@@ -356,11 +358,10 @@ final class Monitor {
     private func executeCommands(for level: CheckLevel) async
         -> (allOk: Bool, results: [CheckResult], openclawMissing: Bool)
     {
-        // Pre-flight: verify openclaw is on PATH
         let (whichCode, _) = await CommandRunner.run("which openclaw", timeout: 5)
         if whichCode != 0 {
             let r = CheckResult(command: "openclaw", exitCode: 127,
-                                output: "openclaw not found on PATH.\nInstall it from https://openclaw.ai")
+                                output: "openclaw not found on PATH.\nInstall from https://openclaw.ai")
             return (false, [r], true)
         }
 
@@ -368,9 +369,9 @@ final class Monitor {
         var allOk = true
 
         for cmd in level.checkCommands {
-            let (code, output) = await CommandRunner.run(cmd.shell)
+            let (code, rawOutput) = await CommandRunner.run(cmd.shell)
+            let output = Monitor.stripDoctorWarnings(rawOutput)
 
-            // Check exit code first, then scan for failure keywords in output
             var failed = (code != 0)
             if !failed && !cmd.failurePatterns.isEmpty {
                 let lower = output.lowercased()
@@ -378,7 +379,6 @@ final class Monitor {
             }
 
             if failed { allOk = false }
-            // Normalise exit code so failed-via-pattern also shows as non-zero
             let effectiveCode: Int32 = failed ? max(code, 1) : 0
             results.append(CheckResult(command: cmd.label, exitCode: effectiveCode, output: output))
         }
@@ -386,28 +386,105 @@ final class Monitor {
         return (allOk, results, false)
     }
 
-    // MARK: - Control panel URL (fetched once on startup)
+    // MARK: - Doctor warning stripping
+
+    private static func stripDoctorWarnings(_ raw: String) -> String {
+        let boxChars: Set<Character> = ["│", "├", "─", "╮", "╯", " "]
+        var result:    [String] = []
+        var prevBlank = true  // suppress leading blank lines
+
+        for line in raw.components(separatedBy: "\n") {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if !t.isEmpty {
+                let isBoxBorder = t.allSatisfy { boxChars.contains($0) }
+                if isBoxBorder
+                    || t.hasPrefix("◇")
+                    || t.hasPrefix("[state-migrations]")
+                    || t.hasPrefix("- Left plugin")
+                    || t.hasPrefix("- Left legacy") {
+                    continue
+                }
+            }
+            let blank = t.isEmpty
+            if blank && prevBlank { continue }  // collapse consecutive blanks
+            result.append(line)
+            prevBlank = blank
+        }
+        while result.last?.trimmingCharacters(in: .whitespaces).isEmpty == true { result.removeLast() }
+        return result.joined(separator: "\n")
+    }
+
+    // MARK: - Control panel URL
 
     func fetchControlPanelURL() async {
         let (_, output) = await CommandRunner.run("openclaw gateway status", timeout: 10)
         for line in output.components(separatedBy: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("Dashboard: ") {
-                let url = String(trimmed.dropFirst("Dashboard: ".count))
-                            .trimmingCharacters(in: .whitespaces)
-                if !url.isEmpty { controlPanelURL = url }
+            let t = line.trimmingCharacters(in: .whitespaces)
+            // Parse port from: "Command: .../node ... gateway --port 18789"
+            if t.hasPrefix("Command:"), let portRange = t.range(of: "--port ") {
+                let rest = t[portRange.upperBound...]
+                if let portStr = rest.components(separatedBy: " ").first,
+                   let port = Int(portStr) {
+                    controlPanelURL = "http://127.0.0.1:\(port)/"
+                }
                 break
             }
         }
     }
 
+    // MARK: - OpenClaw version
+
+    func fetchOpenClawVersion() async {
+        let (code, output) = await CommandRunner.run("openclaw --version", timeout: 10)
+        guard code == 0 else { return }
+        // "OpenClaw 2026.6.11 (e085fa1)" → grab second token
+        let parts = output.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        if parts.count >= 2 { openclawVersion = parts[1] }
+    }
+
+    // MARK: - Update check
+
+    func checkForUpdate() async {
+        guard let url = URL(string: "https://api.github.com/repos/ScottPhillips/openclaw-monitor/releases/latest")
+        else { return }
+        var request = URLRequest(url: url)
+        request.setValue("OpenClawMonitor/1.0", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 15
+
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tagName = json["tag_name"] as? String
+        else { return }
+
+        let latest  = tagName.hasPrefix("v") ? String(tagName.dropFirst()) : tagName
+        let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+        updateAvailable = (latest != current) ? latest : nil
+        onStatusChanged?()
+    }
+
+    // MARK: - applyResults
+
     private func applyResults(ok: Bool, results: [CheckResult], level: CheckLevel) {
+        let wasOk = (checkStatus == .ok)
+
         lastResults = results
         lastCheck   = Date()
         lastLevel   = level
-        checkStatus = ok ? .ok : .failed
 
-        // Parse channel health from the embedded health JSON, if present
+        if openclawMissing {
+            checkStatus = .notInstalled
+        } else {
+            checkStatus = ok ? .ok : .failed
+        }
+
+        if !openclawMissing {
+            if ok && !wasOk {
+                healthySince = Date()
+            } else if !ok {
+                healthySince = nil
+            }
+        }
+
         if let healthResult = results.first(where: { $0.command == "Health" }), healthResult.ok {
             let parsed = parseChannels(from: healthResult.output)
             if !parsed.isEmpty { channels = parsed }
@@ -439,24 +516,19 @@ final class Monitor {
     private func channelIsHealthy(_ d: [String: Any]) -> Bool {
         let configured = d["configured"] as? Bool ?? false
         let probeOk    = (d["probe"] as? [String: Any])?["ok"] as? Bool ?? false
-        // lastError is healthy only when it's JSON null (NSNull after deserialisation)
         let lastError  = d["lastError"]
         let hasError   = !(lastError is NSNull) && lastError != nil
         return configured && probeOk && !hasError
     }
 
-    /// Returns account rows only when a channel has more than one account (e.g. Telegram with multiple bots).
     private func parseAccounts(from ch: [String: Any], channelId: String) -> [ChannelAccount] {
         guard let accounts = ch["accounts"] as? [String: Any], accounts.count > 1 else { return [] }
-
-        // Preserve order: "default" first, then alphabetical
-        let sorted = accounts.keys.sorted { a, b in a == "default" ? true : (b == "default" ? false : a < b) }
-
+        let sorted = accounts.keys.sorted { a, b in
+            a == "default" ? true : (b == "default" ? false : a < b)
+        }
         return sorted.compactMap { accountId in
             guard let acc = accounts[accountId] as? [String: Any] else { return nil }
             let healthy = channelIsHealthy(acc)
-
-            // Build a human-readable label, e.g. "@IamAbbyIrons_bot" or "@TheOGJarvis_bot (jarvis)"
             var label = accountId
             if let probe = acc["probe"] as? [String: Any],
                let bot   = probe["bot"]   as? [String: Any],
@@ -482,7 +554,7 @@ final class Monitor {
 
     private func appendHistory(_ event: HistoryEvent) {
         history.append(event)
-        if history.count > 10 { history = Array(history.suffix(10)) }
+        if history.count > 100 { history = Array(history.suffix(100)) }
         try? JSONEncoder().encode(history).write(to: historyFileURL)
         onStatusChanged?()
     }
@@ -493,10 +565,10 @@ final class Monitor {
         results.filter { !$0.ok }.map { $0.command }.joined(separator: ", ")
     }
 
-    /// Sends a macOS notification via osascript — works without a bundle ID.
     private func notify(title: String, body: String) {
+        guard !isSnoozed else { return }
         let t = title.replacingOccurrences(of: "\"", with: "'")
-        let b = body.replacingOccurrences(of: "\"", with: "'")
+        let b = body.replacingOccurrences(of:  "\"", with: "'")
         Task.detached(priority: .background) {
             _ = await CommandRunner.run(
                 "osascript -e 'display notification \"\(b)\" with title \"\(t)\"'",

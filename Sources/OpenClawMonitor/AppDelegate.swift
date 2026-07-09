@@ -11,8 +11,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Fetch the control-panel URL and run initial check without blocking the UI
         Task {
+            await monitor.fetchOpenClawVersion()
             await monitor.fetchControlPanelURL()
             await monitor.runCheck(level: .basic)
+            await monitor.checkForUpdate()
         }
 
         monitor.startPeriodicTimer()
