@@ -515,10 +515,12 @@ final class Monitor {
 
     private func channelIsHealthy(_ d: [String: Any]) -> Bool {
         let configured = d["configured"] as? Bool ?? false
-        let probeOk    = (d["probe"] as? [String: Any])?["ok"] as? Bool ?? false
+        let running    = d["running"]    as? Bool ?? false
+        // `connected` is Telegram-specific; when absent treat as satisfied
+        let connected  = d["connected"]  as? Bool ?? true
         let lastError  = d["lastError"]
         let hasError   = !(lastError is NSNull) && lastError != nil
-        return configured && probeOk && !hasError
+        return configured && running && connected && !hasError
     }
 
     private func parseAccounts(from ch: [String: Any], channelId: String) -> [ChannelAccount] {
@@ -529,15 +531,10 @@ final class Monitor {
         return sorted.compactMap { accountId in
             guard let acc = accounts[accountId] as? [String: Any] else { return nil }
             let healthy = channelIsHealthy(acc)
-            var label = accountId
-            if let probe = acc["probe"] as? [String: Any],
-               let bot   = probe["bot"]   as? [String: Any],
-               let uname = bot["username"] as? String {
-                label = "@\(uname)"
-                if accountId != "default" { label += "  (\(accountId))" }
-            } else if accountId == "default" {
-                label = "default"
-            }
+            // Use the `name` field when present, fall back to accountId
+            let label = accountId == "default"
+                ? "default"
+                : (acc["name"] as? String ?? accountId)
             return ChannelAccount(id: accountId, label: label, healthy: healthy)
         }
     }

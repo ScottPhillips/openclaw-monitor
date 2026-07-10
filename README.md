@@ -4,7 +4,7 @@ A native macOS menu bar app that keeps an eye on your OpenClaw gateway — check
 
 ## Download
 
-**[⬇ Download OpenClaw Monitor v1.2.0](https://github.com/ScottPhillips/openclaw-monitor/releases/download/v1.2.0/OpenClawMonitor-1.2.0.dmg)**
+**[⬇ Download OpenClaw Monitor v1.2.1](https://github.com/ScottPhillips/openclaw-monitor/releases/download/v1.2.1/OpenClawMonitor-1.2.1.dmg)**
 
 > **macOS security warning:** newer versions of macOS may show "damaged and should be moved to Trash" for unsigned apps downloaded from the internet. The DMG is fine — this is Gatekeeper blocking it. See the install instructions below for the fix.
 
