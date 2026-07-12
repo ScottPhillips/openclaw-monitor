@@ -6,7 +6,7 @@ A native macOS menu bar app that keeps an eye on your OpenClaw gateway — check
 
 **[⬇ Download OpenClaw Monitor v1.2.1](https://github.com/ScottPhillips/openclaw-monitor/releases/download/v1.2.1/OpenClawMonitor-1.2.1.dmg)**
 
-> **macOS security warning:** newer versions of macOS may show "damaged and should be moved to Trash" for unsigned apps downloaded from the internet. The DMG is fine — this is Gatekeeper blocking it. See the install instructions below for the fix.
+This build is signed with a Developer ID and notarized by Apple, so it opens normally — no Gatekeeper warning or workaround needed.
 
 ---
 
@@ -91,13 +91,7 @@ Status:  Error ✗
 
 1. Download the DMG from the link above
 2. Open the DMG, drag **OpenClaw Monitor** into your **Applications** folder
-3. Open **Terminal** and run:
-   ```bash
-   xattr -cr "/Applications/OpenClaw Monitor.app"
-   ```
-4. Launch the app normally — macOS will no longer block it
-
-> **Why is this needed?** macOS Gatekeeper quarantines files downloaded from the internet. Without a paid Apple Developer ID, the only way to clear the quarantine flag is with `xattr -cr`. This is a one-time step.
+3. Launch the app normally from Applications
 
 To start automatically at login: **System Settings → General → Login Items → +** → select OpenClaw Monitor.
 

@@ -34,7 +34,7 @@ APPLE_ID     ?=
 TEAM_ID      ?=
 KEYCHAIN_PROFILE ?= openclaw-notary
 
-.PHONY: all build release bundle dmg sign notarize clean help
+.PHONY: all build release bundle dmg package-dmg sign notarize clean help
 
 all: build
 
@@ -74,7 +74,11 @@ bundle: release
 	@echo "  ✓ Bundle ready: $(APP_BUNDLE)"
 
 # ── DMG installer ─────────────────────────────────────────────────────────────
-dmg: bundle
+dmg: bundle package-dmg
+
+# Packages whatever is currently in $(APP_BUNDLE) — does NOT depend on bundle,
+# so it won't clobber a signature applied to the bundle by an earlier step.
+package-dmg:
 	@echo "→ Creating DMG at $(DMG_PATH)"
 	@rm -f "$(DMG_PATH)"
 
@@ -113,7 +117,7 @@ sign: bundle
 	    --entitlements "$(SCRIPTS_DIR)/entitlements.plist" \
 	    "$(APP_BUNDLE)"
 	@echo "→ Creating signed DMG"
-	@$(MAKE) dmg
+	@$(MAKE) package-dmg
 	codesign --sign "$(IDENTITY)" "$(DMG_PATH)"
 	@echo "✓ Signed DMG: $(DMG_PATH)"
 
